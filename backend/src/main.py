@@ -5,16 +5,18 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from fastapi import FastAPI,Depends,HTTPException
 from fastapi.responses import JSONResponse
-from .db import session
+from .db import session,migrate
 from .models import *
 from .schemas import *
 from .common import lock,pack,add,audit,stamp
 from .auth import current,writer,supervisor,verify,token
 from .middleware import Trace,Burst
-from . import auction_service as auction,dispute_service as dispute
+from . import auction_service as auction,dispute_service as dispute,receipt_service as receipt
 q=redis.Redis.from_url(os.environ['REDIS_URL'],decode_responses=True)
 @asynccontextmanager
 async def lifespan(app):
+    try:migrate()
+    except Exception:logging.exception('migration failed')
     if os.getenv('SEED_DEMO','true').lower()=='true':
         try:
             from .seed_service import seed
@@ -35,7 +37,10 @@ def login(d:Login,s=Depends(session)):
 def me(u=Depends(current)):return {'email':u.email,'role':u.role}
 @app.get('/archive')
 def archive(s=Depends(session),u=Depends(current)):
-    return {m.__tablename__:[pack(x)for x in s.scalars(select(m).order_by(m.id))]for m in (Clock,Consignment,VaseSample,AuctionSession,AuctionLot,Bid,Deal,Dispute,Settlement)}
+    return {m.__tablename__:[pack(x)for x in s.scalars(select(m).order_by(m.id))]for m in (Clock,Consignment,VaseSample,AuctionSession,AuctionLot,Bid,ReceiptCheck,Deal,Dispute,Settlement)}
+@app.get('/receipt-checks')
+def receipt_checks(s=Depends(session),u=Depends(current)):
+    return [pack(x)for x in s.scalars(select(ReceiptCheck).order_by(ReceiptCheck.id))]
 @app.get('/audits')
 def audits(s=Depends(session),u=Depends(current)):return [pack(x)for x in s.scalars(select(Audit).order_by(Audit.id.desc()).limit(50))]
 @app.post('/consignments')
@@ -70,6 +75,10 @@ def observation(id:int,d:ObservationInput,s=Depends(session),u=Depends(writer)):
     x=lock(s,VaseSample,id)
     if x.observed_days is not None:raise HTTPException(409,'瓶插终点观察已封存，不可覆盖争议证据')
     x.observed_days=d.observed_days;audit(s,u,'封存实际瓶插观察');s.commit();return pack(x)
+@app.post('/consignments/{id}/receipt-check')
+def receipt_check(id:int,d:ReceiptCheckInput,s=Depends(session),u=Depends(supervisor)):
+    if d.consignment_id!=id:raise HTTPException(409,'实收复核必须对应到场批次')
+    x=receipt.verify(s,d,u);s.commit();return x
 @app.post('/sessions')
 def session_new(d:SessionInput,s=Depends(session),u=Depends(supervisor)):
     x=auction.session_create(s,d,u);s.commit();return x
@@ -99,6 +108,9 @@ def decide(id:int,d:DecisionInput,s=Depends(session),u=Depends(supervisor)):
 @app.post('/deals/{id}/settlements')
 def settlement(id:int,s=Depends(session),u=Depends(supervisor)):
     x=dispute.draft(s,id,u);s.commit();return x
+@app.post('/deals/{id}/shortfall-choice')
+def shortfall(id:int,d:ShortfallChoiceInput,s=Depends(session),u=Depends(writer)):
+    x=receipt.choice(s,id,d,u);s.commit();return x
 @app.post('/settlements/{id}/pay')
 def pay(id:int,d:ReceiptInput,s=Depends(session),u=Depends(supervisor)):
     x=dispute.pay(s,id,d,u);s.commit();return x

@@ -1,6 +1,6 @@
 from sqlalchemy import Column,Integer,String,Float,Boolean,ForeignKey,JSON,UniqueConstraint,CheckConstraint
 from .db import Base
-from .constants import SAMPLE_STATES,LOT_STATES
+from .constants import SAMPLE_STATES,LOT_STATES,DEAL_STATES
 class User(Base):
     __tablename__='users'
     id=Column(Integer,primary_key=True);email=Column(String(100),unique=True,nullable=False);password_hash=Column(String(220),nullable=False);role=Column(String(30),nullable=False)
@@ -22,18 +22,22 @@ class AuctionSession(Base):
     id=Column(Integer,primary_key=True);code=Column(String(60),unique=True,nullable=False);opens_at=Column(String(20),nullable=False);closes_at=Column(String(20),nullable=False)
 class AuctionLot(Base):
     __tablename__='auction_lots'
-    id=Column(Integer,primary_key=True);code=Column(String(60),unique=True,nullable=False);consignment_id=Column(Integer,ForeignKey('consignments.id'),nullable=False);sample_id=Column(Integer,ForeignKey('vase_samples.id'),nullable=False);session_id=Column(Integer,ForeignKey('auction_sessions.id'),nullable=False);crates=Column(Integer,nullable=False);reserve_cents=Column(Integer,nullable=False);state=Column(String(20),default=LOT_STATES[0]);grade_snapshot=Column(String(2),nullable=False)
+    id=Column(Integer,primary_key=True);code=Column(String(60),unique=True,nullable=False);consignment_id=Column(Integer,ForeignKey('consignments.id'),nullable=False);sample_id=Column(Integer,ForeignKey('vase_samples.id'),nullable=False);session_id=Column(Integer,ForeignKey('auction_sessions.id'),nullable=False);crates=Column(Integer,nullable=False);allocated_crates=Column(Integer,nullable=True);pending_crates=Column(Integer,default=0,nullable=False);shortfall_crates=Column(Integer,default=0,nullable=False);reserve_cents=Column(Integer,nullable=False);state=Column(String(20),default=LOT_STATES[0]);grade_snapshot=Column(String(2),nullable=False);disposition=Column(String(30),default='offered',nullable=False);disposition_reason=Column(String(450),default='');receipt_check_id=Column(Integer,ForeignKey('receipt_checks.id'),nullable=True)
     __table_args__=(CheckConstraint('crates>0 AND reserve_cents>0'),)
 class Bid(Base):
     __tablename__='bids'
     id=Column(Integer,primary_key=True);lot_id=Column(Integer,ForeignKey('auction_lots.id'),nullable=False);buyer=Column(String(80),nullable=False);unit_cents=Column(Integer,nullable=False);at=Column(String(20),nullable=False)
+class ReceiptCheck(Base):
+    __tablename__='receipt_checks'
+    id=Column(Integer,primary_key=True);consignment_id=Column(Integer,ForeignKey('consignments.id'),unique=True,nullable=False);verified_crates=Column(Integer,nullable=False);declared_crates=Column(Integer,nullable=False);occupied_crates=Column(Integer,nullable=False);note=Column(String(250),nullable=False);actor=Column(String(100),nullable=False);at=Column(String(20),nullable=False);snapshot=Column(JSON)
+    __table_args__=(CheckConstraint('verified_crates>=0'),)
 class Deal(Base):
     __tablename__='deals'
-    id=Column(Integer,primary_key=True);lot_id=Column(Integer,ForeignKey('auction_lots.id'),unique=True,nullable=False);bid_id=Column(Integer,ForeignKey('bids.id'),nullable=False);buyer=Column(String(80),nullable=False);crates=Column(Integer,nullable=False);unit_cents=Column(Integer,nullable=False);original_grade=Column(String(2),nullable=False);effective_grade=Column(String(2),nullable=False);revision=Column(Integer,default=1);at=Column(String(20),nullable=False)
+    id=Column(Integer,primary_key=True);lot_id=Column(Integer,ForeignKey('auction_lots.id'),unique=True,nullable=False);bid_id=Column(Integer,ForeignKey('bids.id'),nullable=False);buyer=Column(String(80),nullable=False);crates=Column(Integer,nullable=False);unit_cents=Column(Integer,nullable=False);original_grade=Column(String(2),nullable=False);effective_grade=Column(String(2),nullable=False);revision=Column(Integer,default=1);at=Column(String(20),nullable=False);state=Column(String(20),default=DEAL_STATES[0],nullable=False);delivered_crates=Column(Integer,nullable=True);shortfall_crates=Column(Integer,default=0,nullable=False);shortfall_choice=Column(String(20));shortfall_note=Column(String(250));choice_at=Column(String(20));choice_by=Column(String(100));receipt_check_id=Column(Integer,ForeignKey('receipt_checks.id'),nullable=True);snapshot=Column(JSON)
 class Dispute(Base):
     __tablename__='disputes'
     id=Column(Integer,primary_key=True);deal_id=Column(Integer,ForeignKey('deals.id'),nullable=False);reason=Column(String(250),nullable=False);state=Column(String(20),default='opened');decision_note=Column(String(250));revised_grade=Column(String(2));sample_snapshot=Column(JSON)
 class Settlement(Base):
     __tablename__='settlements'
-    id=Column(Integer,primary_key=True);deal_id=Column(Integer,ForeignKey('deals.id'),nullable=False);revision=Column(Integer,nullable=False);kind=Column(String(20),nullable=False);gross_cents=Column(Integer,nullable=False);commission_cents=Column(Integer,nullable=False);target_cents=Column(Integer,nullable=False);delta_cents=Column(Integer,nullable=False);state=Column(String(20),default='draft');snapshot=Column(JSON);receipt=Column(String(80))
+    id=Column(Integer,primary_key=True);deal_id=Column(Integer,ForeignKey('deals.id'),nullable=False);revision=Column(Integer,nullable=False);kind=Column(String(20),nullable=False);crates=Column(Integer,nullable=True);gross_cents=Column(Integer,nullable=False);commission_cents=Column(Integer,nullable=False);target_cents=Column(Integer,nullable=False);delta_cents=Column(Integer,nullable=False);state=Column(String(20),default='draft');snapshot=Column(JSON);receipt=Column(String(80));receipt_check_id=Column(Integer,ForeignKey('receipt_checks.id'),nullable=True)
     __table_args__=(UniqueConstraint('deal_id','revision'),)

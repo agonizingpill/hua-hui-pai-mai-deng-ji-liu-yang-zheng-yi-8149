@@ -26,3 +26,7 @@ class BidInput(BaseModel):buyer:str=Field(min_length=2,max_length=80);unit_cents
 class DisputeInput(BaseModel):deal_id:int;reason:str=Field(min_length=6,max_length=250)
 class DecisionInput(BaseModel):grade:Literal['A','B','C'];note:str=Field(min_length=6,max_length=250)
 class ReceiptInput(BaseModel):receipt:str=Field(min_length=4,max_length=80)
+class ReceiptCheckInput(BaseModel):
+    consignment_id:int;verified_crates:int=Field(ge=0,le=10000);note:str=Field(min_length=4,max_length=250)
+class ShortfallChoiceInput(BaseModel):
+    choice:Literal['deliver','cancel'];note:str=Field(min_length=4,max_length=250)

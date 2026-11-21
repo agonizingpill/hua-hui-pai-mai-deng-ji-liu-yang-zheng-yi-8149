@@ -1,4 +1,9 @@
 ROLES=('operator','supervisor','viewer')
 GRADES=('A','B','C')
 SAMPLE_STATES=('recorded','queued','running','ready','failed','approved')
-LOT_STATES=('offered','sold','cancelled')
+LOT_STATES=('offered','sold','cancelled','returned')
+DEAL_STATES=('active','short_pending','delivered_short','cancelled')
+DISPOSITIONS=('offered','sold','returned','short_pending','short_delivered','short_cancelled','cancelled')
+WEIGHT={'A':100,'B':90,'C':75}
+RANK={'A':0,'B':1,'C':2}
+COMMISSION_PCT=5

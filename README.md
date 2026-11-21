@@ -17,13 +17,13 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 |角色|邮箱 / 统一口令 Flowers2026!|允许动作|
 |---|---|---|
-|operator 验级员|operator@chenlu.demo|登记到场/留样、估级、封存瓶插终点、占筐挂场、记录买方报价、申请争议|
-|supervisor 拍卖主管|supervisor@chenlu.demo|全部日常动作；筐贴备注核对、核级、场次/时钟、截标/撤场、留样复判、生成结算与登记补退回单|
+|operator 验级员|operator@chenlu.demo|登记到场/留样、估级、封存瓶插终点、占筐挂场、记录买方报价与短交处置选择、申请争议|
+|supervisor 拍卖主管|supervisor@chenlu.demo|全部日常动作；筐贴备注核对、实收复核、核级、场次/时钟、截标/撤场、留样复判、生成结算与登记补退回单|
 |viewer 观察席|viewer@chenlu.demo|六页、档案与审计读取；全部写接口后端403|
 
 JWT8小时，PBKDF2盐化口令；Trace中间件请求ID、Burst每IP每分钟360请求、审计actor/action。演示部署需更换默认JWT和库口令。
 
-## 六个业务模块
+## 七个业务模块
 
 1. **采切批次与到场分筐**：Consignment唯一code，种植户/品种/采切与到场时间/筐数/每筐支数。到场必须在采切后48小时内且不晚于业务时钟。数量建立后不可任意改写，主管只能修筐贴备注。挂场和成交合计占筐不得超实收。
 2. **瓶插留样与寿命估级**：VaseSample关联到场单，唯一留样签，成熟度、杆长、冷藏小时不得超过采后小时。recorded→queued→running→ready或failed，worker真实估级后主管核定A/B/C，保留模型建议与人工核级。实际瓶插终点只能封存一次；争议使用冻结快照，不覆盖旧证据。
@@ -31,6 +31,7 @@ JWT8小时，PBKDF2盐化口令；Trace中间件请求ID、Burst每IP每分钟36
 4. **竞价与成交锁筐**：Bid须在`opens_at ≤ clock < closes_at`时提交，达到底价并严格高于当前最高价。同父行→场次→业务时钟→标的锁序，避免并发报价检查窗口。主管只能在截止后一次截标，最高价Bid生成唯一Deal；无报价不成交，需撤场。成交冻结买方、单价、筐数与原等级，不能再次出售。
 5. **留样争议和复判**：Deal必须已有实际留样天数才可开Dispute，每成交只允许一条未决争议。主管复判不得上调现有效等级，也不得高于冻结终点对应级别（≥10天A、≥7天B、否则C）。复判只追加修订，推进Deal.revision，旧draft结算作废；已付记录保留。
 6. **货款结算及差额补退**：A/B/C权重100/90/75，`折后货款=floor(成交筐价×筐数×新等级权重÷原等级权重)`，佣金floor(货款×5%)，目标净款=货款−佣金。本次delta=当前目标−所有已付delta合计；负数为种植户退款。每成交每revision唯一Settlement，争议未决禁止生成/支付，过期/已付/作废拒绝再支付，回单号持久化。金额用整数分。
+7. **实收复核与短交处置**：主管可在到场页对一批登记“实收筐数”一次，生成不可覆盖的ReceiptCheck。处置按截标先后（Deal.at，再按id）保留已成交标的：足额成交照常；不足的成交记short_pending，待交数量=AuctionLot.pending_crates；未成交挂场标的一律退回（returned）释放占筐。复核短缺后，买方在“货款补退”选择按实交筐数结算（deliver）或整单取消（cancel），选择登记后不可覆盖。两种选择都推进Deal.revision并自动生成该版本差额结算单：deliver按实交筐数重算、多付部分为负delta退款；cancel按0筐、已付全额退回。原成交快照（crates/unit_cents/buyer/grade）保留在Deal.snapshot与结算snapshot中，覆盖后无法恢复。复核、截标、付款同一批次内共用父行锁，处置与金额在同一次提交切换。重复提交同值复核/选择返回replayed，不重复扣筐或生成补退。挂场和结算页面逐标的显示处置理由、待交筐数与差额。
 
 业务时钟Clock初始2026-11-18 08:00，由主管在“等级挂场”向前推进；场次/截止判定统一用该时钟，无需等待现实时间。界面datetime按本地业务时间解释，不支持时区换算。seed和重启不回拨时钟。
 
@@ -44,16 +45,17 @@ JWT8小时，PBKDF2盐化口令；Trace中间件请求ID、Burst每IP每分钟36
 
 1. 07:30 验级员接`FL031`洋桔梗18筐，每筐40支，采切04:30；核对筐贴FL031-01至18。2筐有历史成交和6天留样争议，剩余16筐可演练。
 2. 08:00 对新批建立`FLS-NEW`，成熟度.3、杆长72cm、冷藏2h，送worker估级；查看150/50留出MAE，主管结合验花核定A。
-3. 08:10 建`MORNING-NEW`场次08:00–09:00，挂`LOT-NEW`4筐、底价8000分。试7000分挂场被拒，改8000恢复；重复挂超过实收也拒。
+3. 08:10 建`MORNING-NEW`场次08:00–09:00，挂`LOT-NEW`4筐、底价8000分。试7000分挂场被拒，改8000恢复；重复挂超过实收也拒。到场页主管可用“实收复核”演练短缺：例如实收只14筐，则未成交挂场退回、已成交按截标先后保留，短交成交等待买方选择。
 4. 08:20 花店甲报价9000分/筐，花店乙10000分；低于底价、同最高价都拒。提前截标拒绝，主管推进业务时钟到09:00后截标，乙成交4筐40000分。
 5. 09:10 生成R1货款：40000−2000佣金=38000分，登记`BANK-FIRST`回单。
 6. 09:20 买方申请争议，无实际留样终点先被拒。回瓶插页封存6天，再开争议；主管据冻结留样复判C，Deal推进R2。
 7. 09:40 R2目标30000货款−1500佣金=28500分；此前已付38000，补退delta为−9500分，登记`REFUND-9500`退款回单。R1保持原值。
 8. 10:00 观察席复看成交、留样快照与两次回单；没有外发支付或交易指令，付款/退款是本地业务登记。
+9. 10:10 若主管复核实收少于已挂与成交合计：成交按截标先后保住，未成交退回；仍有成交缺筐时，买方在“货款补退”选择按实交结算或整单取消，系统按同一份实收依据生成补退，原成交快照保留。
 
 ## 结构与开发
 
-后端关系实体`models.py`、输入约束`schemas.py`、`auction_service.py`父锁/额度/竞价/成交、`dispute_service.py`证据/修订/金额账、`grading.py`模型、`worker.py`队列、`main.py`逐路由权限。前端六独立pages分别处理arrival/samples/offers/bidding/disputes/settlement，`components/tickets.js`留样等级签/到场签/拍价带等跨页复用；`utils/format.js`类型转义、`utils/actions.js`请求错误恢复、store关联档案。前后端constants均有角色、等级、留样状态、标的状态，后端schema/业务规则执行校验，前端展示实际持久状态。
+后端关系实体`models.py`、输入约束`schemas.py`、`auction_service.py`父锁/额度/竞价/成交、`dispute_service.py`证据/修订/金额账、`grading.py`模型、`worker.py`队列、`main.py`逐路由权限。后端`receipt_service.py`做实收复核、短交处置与差额账；前端六独立pages分别处理arrival/samples/offers/bidding/disputes/settlement，`components/tickets.js`留样等级签/到场签/拍价带等跨页复用；`utils/format.js`类型转义、`utils/actions.js`请求错误恢复、store关联档案。前后端constants均有角色、等级、留样状态、标的状态，后端schema/业务规则执行校验，前端展示实际持久状态。
 
 本地后端安装requirements，配置DATABASE_URL/REDIS_URL/JWT_SECRET，运行`uvicorn src.main:app --reload`与`python -m src.worker`；前端可由Compose Nginx反代/api。seed自然键只补缺：不覆盖人工筐贴、时钟、观察、竞价、争议判定和已付回单。测试与截图在`../../test-artifacts/gb-1035/`。
 

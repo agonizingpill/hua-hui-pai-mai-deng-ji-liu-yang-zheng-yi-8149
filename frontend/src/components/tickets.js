@@ -1,4 +1,5 @@
 import{esc}from'../utils/format.js';
+import{DISPOSITIONS,DEAL_STATES}from'../constants.js';
 export const money=n=>'¥'+(n/100).toFixed(2);
 export function title(number,name,description){return `<div class="heading"><span>CHENLU AUCTION HOUSE / ${number}</span><h1>${name}</h1><p>${description}</p></div>`}
 export function grade(value){return `<strong class="grade grade-${esc(value||'U')}">${esc(value||'?')}</strong>`}
@@ -8,4 +9,6 @@ export function options(items,label,selected){return items.map(x=>`<option value
 export function input(name,label,type='text',value='',extra=''){return `<label>${label}</label><input name="${name}" type="${type}" value="${esc(value)}" ${extra}>`}
 export function button(path,label,disabled=false){return `<button type="button" data-action="${path}" ${disabled?'disabled':''}>${label}</button>`}
 export function isViewer(s){return s.user.role==='viewer'}
+export function disposition(value){return `<span class="dispo dispo-${esc(value||'offered')}">${esc(DISPOSITIONS[value]||value||'—')}</span>`}
+export function dealState(value){return `<span class="dispo dispo-${esc(value||'active')}">${esc(DEAL_STATES[value]||value||'—')}</span>`}
 export function isSupervisor(s){return s.user.role==='supervisor'}

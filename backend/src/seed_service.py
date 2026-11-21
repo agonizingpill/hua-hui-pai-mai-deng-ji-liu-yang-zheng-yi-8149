@@ -1,10 +1,10 @@
 from sqlalchemy import select,func
-from .db import Base,engine,Session
+from .db import Base,engine,Session,migrate
 from .models import *
 from .auth import hashed
 
 def seed():
-    Base.metadata.create_all(engine)
+    migrate()
     with Session()as s:
         for role in ('operator','supervisor','viewer'):
             if not s.scalar(select(User.id).where(User.email==role+'@chenlu.demo')):s.add(User(email=role+'@chenlu.demo',password_hash=hashed('Flowers2026!'),role=role))
@@ -16,10 +16,10 @@ def seed():
         session=s.scalar(select(AuctionSession).where(AuctionSession.code=='HISTORY-031'))
         if not session:session=AuctionSession(code='HISTORY-031',opens_at='2026-11-18T07:40:00',closes_at='2026-11-18T07:50:00');s.add(session);s.flush()
         lot=s.scalar(select(AuctionLot).where(AuctionLot.code=='HIST-LOT031'))
-        if not lot:lot=AuctionLot(code='HIST-LOT031',consignment_id=c.id,sample_id=sample.id,session_id=session.id,crates=2,reserve_cents=8000,state='sold',grade_snapshot='A');s.add(lot);s.flush()
+        if not lot:lot=AuctionLot(code='HIST-LOT031',consignment_id=c.id,sample_id=sample.id,session_id=session.id,crates=2,allocated_crates=2,reserve_cents=8000,state='sold',disposition='sold',disposition_reason='历史成交，待实收复核',grade_snapshot='A');s.add(lot);s.flush()
         bid=s.scalar(select(Bid).where(Bid.lot_id==lot.id))
         if not bid:bid=Bid(lot_id=lot.id,buyer='巷口花店',unit_cents=10000,at='2026-11-18T07:45:00');s.add(bid);s.flush()
         deal=s.scalar(select(Deal).where(Deal.lot_id==lot.id))
-        if not deal:deal=Deal(lot_id=lot.id,bid_id=bid.id,buyer=bid.buyer,crates=2,unit_cents=10000,original_grade='A',effective_grade='A',revision=1,at='2026-11-18T07:50:00');s.add(deal);s.flush()
+        if not deal:deal=Deal(lot_id=lot.id,bid_id=bid.id,buyer=bid.buyer,crates=2,unit_cents=10000,original_grade='A',effective_grade='A',revision=1,at='2026-11-18T07:50:00',state='active',delivered_crates=2,snapshot={'at_close':{'crates':2,'unit_cents':10000,'buyer':bid.buyer,'original_grade':'A','at':'2026-11-18T07:50:00'}});s.add(deal);s.flush()
         if not s.scalar(select(Dispute.id).where(Dispute.deal_id==deal.id)):s.add(Dispute(deal_id=deal.id,reason='历史留样仅6天，买方请求按留样复判',state='opened',sample_snapshot={c.name:getattr(sample,c.name)for c in sample.__table__.columns}))
-        s.commit();return {m.__tablename__:s.scalar(select(func.count()).select_from(m))for m in (User,Consignment,VaseSample,AuctionSession,AuctionLot,Bid,Deal,Dispute,Settlement)}
+        s.commit();return {m.__tablename__:s.scalar(select(func.count()).select_from(m))for m in (User,Consignment,VaseSample,AuctionSession,AuctionLot,Bid,ReceiptCheck,Deal,Dispute,Settlement)}
